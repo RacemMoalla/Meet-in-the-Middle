@@ -1,0 +1,7 @@
+{
+  "_commentaire_1": "mettre ip de votre service de decision",
+  "cluster_ip": "34.130.181.161",
+  "_commentaire_2": "mettre ip de votre voiture",
+  "db_ip": "127.0.0.1",
+  "apply_delay": "1"
+}
