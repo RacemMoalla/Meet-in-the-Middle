@@ -1,0 +1,207 @@
+pipeline {
+    agent any
+
+    environment {
+        KUBE_CONFIG_PATH_EU = credentials('kub-eu')
+        KUBE_CONFIG_PATH_NA = credentials('kube-na')
+    }
+
+    stages {
+        stage('Integrate with Source k8s (EU)') {
+            steps {
+                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
+                    sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"'
+                    sh 'chmod u+x ./kubectl'
+                    sh './kubectl get nodes'
+                    sh "./kubectl top node gke-eur-cluster-default-pool-b14a7988-sxg8"
+                    sh './kubectl get pods --field-selector spec.nodeName=gke-eur-cluster-default-pool-b14a7988-sxg8'
+                    sh './kubectl get services'
+                }
+            }
+        }
+
+        stage('Check Resource Usage and Trigger Migration') {
+            steps {
+                script {
+                    def usageExceeded = checkNodeResourceUsage()
+
+                    if (usageExceeded) {
+                        env.TRIGGER_MIGRATION = 'true'
+                        echo 'Migration triggered due to resource usage exceeding thresholds.'
+                    } else {
+                        echo 'No migration triggered.'
+                    }
+                }
+            }
+        }
+
+        stage('Export Deployment and Service from Source (EU)') {
+            when {
+                expression { env.TRIGGER_MIGRATION == 'true' }
+            }
+            steps {
+                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
+                    sh './kubectl get deployment decision-service -o yaml > deployment.yaml'
+                    sh './kubectl get service decision-service -o yaml > service.yaml'
+                    archiveArtifacts artifacts: 'deployment.yaml, service.yaml', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Modify Deployment YAML for Migration') {
+            when {
+                expression { env.TRIGGER_MIGRATION == 'true' }
+            }
+            steps {
+                script {
+                    def inputYaml = 'deployment.yaml'
+                    def outputYaml = 'deployment_modified.yaml'
+                    def nodeParam = 'gke-na-cluster-default-pool-f91be5e4-8tpc' // Nouveau nom de nœud en NA
+
+                    sh "python3 mig.py ${inputYaml} ${outputYaml} ${nodeParam}"
+
+                    archiveArtifacts artifacts: 'deployment_modified.yaml', allowEmptyArchive: true
+                }
+            }
+        }
+
+        stage('Integrate with Destination k8s (NA)') {
+            when {
+                expression { env.TRIGGER_MIGRATION == 'true' }
+            }
+            steps {
+                withKubeConfig(credentialsId: 'kube-na', caCertificate: '', serverUrl: 'https://34.130.19.109') {
+                    sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"'
+                    sh 'chmod u+x ./kubectl'
+                    sh './kubectl get nodes'
+                }
+            }
+        }
+
+        stage('Migrate Deployment and Service to Destination (NA)') {
+            when {
+                expression { env.TRIGGER_MIGRATION == 'true' }
+            }
+            steps {
+                withKubeConfig(credentialsId: 'kube-na', caCertificate: '', serverUrl: 'https://34.130.19.109') {
+                    sh 'ls -l deployment_modified.yaml service.yaml'
+                    sh './kubectl apply -f deployment_modified.yaml --force'
+                    sh './kubectl apply -f service.yaml --force'
+                }
+            }
+        }
+
+         stage('Retrieve External IP and Update via API') {
+             when {
+                 expression { env.TRIGGER_MIGRATION == 'true' }
+            }
+            steps {
+                script {
+                    def externalIP = ''
+                    def attempts = 0
+                    def maxAttempts = 20
+                    def sleepTime = 30 // seconds
+                 
+
+                    while (externalIP == '' && attempts < maxAttempts) {
+                        withKubeConfig(credentialsId: 'kube-na', caCertificate: '', serverUrl: 'https://34.130.19.109') {
+                            // Retrieve external IP of decision-service
+                            externalIP = sh(script: './kubectl get service decision-service -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"', returnStdout: true).trim()
+                            echo "External IP of decision-service: ${externalIP}"
+                        }
+
+                        if (externalIP == null || externalIP=='') {
+                            echo "Waiting for external IP to be assigned..."
+                            sleep sleepTime
+                            attempts++
+                        }
+                        if (attempts == 1) {
+                            sleepTime = 2
+                        }
+                    }
+                  
+                    if (externalIP != null && externalIP!='') {
+                        def apiUrl = "http://34.163.222.120:3000/update-cluster-ip"
+                        def payload = "{\"updatedIP\": \"${externalIP}\", \"apply_delay\": \"1\"}"
+
+                        // Make the API call using curl
+                        sh "curl -X POST ${apiUrl} -H 'Content-Type: application/json' -d '${payload}'"
+                    } else {
+                        error "Failed to retrieve external IP after ${maxAttempts} attempts"
+                    }
+                    }
+                }
+            
+        }
+
+
+
+        stage('Delete Old Deployment and Service from Source (EU)') {
+            when {
+                expression { env.TRIGGER_MIGRATION == 'true' }
+            }
+            steps {
+                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
+                    sh './kubectl delete deployment decision-service'
+                    sh './kubectl delete service decision-service'
+                }
+            }
+        }
+    }
+     
+    post {
+        always {
+            node('') {
+                script {
+                    if (env.TRIGGER_MIGRATION == 'true') {
+                        echo 'Migration completed successfully.'
+                    } else {
+                        echo 'No migration performed.'
+                    }
+                }
+            }
+        }
+    }
+}
+
+def checkNodeResourceUsage() {
+    while (true) {
+        sleep time: 10, unit: 'SECONDS'
+
+        def usageExceeded = false
+
+        withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
+            def nodeStatus = sh(script: "./kubectl top node gke-eur-cluster-default-pool-b14a7988-sxg8", returnStdout: true).trim()
+            echo "Node Status:"
+            echo nodeStatus
+
+            def lines = nodeStatus.readLines()
+            lines.each { line ->
+                if (line.contains('gke-eur-cluster-default-pool-b14a7988-sxg8')) {
+                    def parts = line.split()
+                    if (parts.size() >= 5) {
+                        def cpuUsage = extractNumericValue(parts[2])
+                        def memoryUsage = extractNumericValue(parts[4])
+                        echo "Node gke-eur-cluster-default-pool-b14a7988-sxg8: CPU Usage = ${cpuUsage}%, Memory Usage = ${memoryUsage}%"
+
+                        if (cpuUsage > 80 || memoryUsage > 80) {
+                            usageExceeded = true
+                        }
+                    }
+                }
+            }
+        }
+
+        if (usageExceeded) {
+            return true
+        }
+    }
+
+    return false
+}
+
+def extractNumericValue(valueString) {
+    // Function to extract numeric value from a string
+    def numericValue = valueString.replaceAll(/[^0-9.]/, '')
+    return numericValue.toDouble()
+}
