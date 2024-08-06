@@ -63,8 +63,8 @@ spec:
                     withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
                         for (int i = 0; i < 8; i++) {
                             sh 'sleep 30'
-                            def result = sh(script: './kubectl top nodes gke-cluster-eu-default-pool-7871b70a-whwk', returnStdout: true).trim()
-                            echo "Node gke-cluster-eu-default-pool-7871b70a-whwk Resource Usage: ${result}"
+                            def result = sh(script: './kubectl top nodes gke-eur-cluster-default-pool-b14a7988-tdzq', returnStdout: true).trim()
+                            echo "Node gke-eur-cluster-default-pool-b14a7988-tdzq Resource Usage: ${result}"
                         }
                     }
                 }
