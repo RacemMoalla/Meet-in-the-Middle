@@ -1,0 +1,88 @@
+pipeline {
+    agent any
+
+    environment {
+        KUBE_CONFIG_PATH_EU = credentials('kub-eu')
+    }
+
+    stages {
+        stage('Install kubectl') {
+            steps {
+                script {
+                    sh '''
+                    curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt
+                    curl -LO https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl
+                    chmod +x ./kubectl
+                    '''
+                }
+            }
+        }
+
+        stage('Apply Load Generator Pod') {
+            steps {
+                script {
+                    writeFile file: 'load-generator.yaml', text: '''apiVersion: v1
+kind: Pod
+metadata:
+  name: load-generator
+  labels:
+    app: load-generator
+spec:
+  containers:
+  - name: stress-ng
+    image: polinux/stress-ng
+    args:
+    - --cpu
+    - "4"
+    - --io
+    - "2"
+    - --vm
+    - "2"
+    - --vm-bytes
+    - "128M"
+    - --timeout
+    - "600s"
+    resources:
+      requests:
+        memory: "1000Mi"
+        cpu: "500m"
+      limits:
+        memory: "1Gi"
+        cpu: "2"
+'''
+                }
+                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
+                    sh './kubectl apply --validate=false -f load-generator.yaml'
+                }
+            }
+        }
+
+        stage('Monitor Node Resources') {
+            steps {
+                script {
+                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
+                        for (int i = 0; i < 8; i++) {
+                            sh 'sleep 30'
+                            def result = sh(script: './kubectl top nodes gke-cluster-eu-default-pool-7871b70a-whwk', returnStdout: true).trim()
+                            echo "Node gke-cluster-eu-default-pool-7871b70a-whwk Resource Usage: ${result}"
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    post {
+        always {
+            node('') {
+                script {
+                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
+                        sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"' 
+                        sh 'chmod u+x ./kubectl'
+                        sh './kubectl delete pod load-generator'
+                    }
+                }
+            }
+        }
+    }
+}
