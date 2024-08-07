@@ -28,6 +28,15 @@ metadata:
   labels:
     app: load-generator
 spec:
+  affinity:
+    nodeAffinity:
+      requiredDuringSchedulingIgnoredDuringExecution:
+        nodeSelectorTerms:
+        - matchExpressions:
+          - key: kubernetes.io/hostname
+            operator: In
+            values:
+            - gke-eur-cluster-default-pool-b14a7988-tdzq
   containers:
   - name: stress-ng
     image: polinux/stress-ng
@@ -37,7 +46,7 @@ spec:
     - --io
     - "2"
     - --vm
-    - "2"
+    - "4"
     - --vm-bytes
     - "128M"
     - --timeout
@@ -45,13 +54,13 @@ spec:
     resources:
       requests:
         memory: "1000Mi"
-        cpu: "500m"
+        cpu: "400m"
       limits:
         memory: "1Gi"
         cpu: "2"
 '''
                 }
-                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
+                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
                     sh './kubectl apply --validate=false -f load-generator.yaml'
                 }
             }
@@ -60,9 +69,9 @@ spec:
         stage('Monitor Node Resources') {
             steps {
                 script {
-                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
-                        for (int i = 0; i < 8; i++) {
-                            sh 'sleep 30'
+                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
+                        for (int i = 0; i < 10; i++) {
+                            sh 'sleep 10'
                             def result = sh(script: './kubectl top nodes gke-eur-cluster-default-pool-b14a7988-tdzq', returnStdout: true).trim()
                             echo "Node gke-eur-cluster-default-pool-b14a7988-tdzq Resource Usage: ${result}"
                         }
@@ -74,13 +83,11 @@ spec:
 
     post {
         always {
-            node('') {
-                script {
-                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
-                        sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"' 
-                        sh 'chmod u+x ./kubectl'
-                        sh './kubectl delete pod load-generator'
-                    }
+            script {
+                withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
+                    sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"' 
+                    sh 'chmod u+x ./kubectl'
+                    sh './kubectl delete pod load-generator'
                 }
             }
         }
