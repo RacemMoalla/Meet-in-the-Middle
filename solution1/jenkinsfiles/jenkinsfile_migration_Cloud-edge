@@ -35,7 +35,7 @@ pipeline {
                     // Appel du script Python pour modifier le YAML
                     def inputYaml = 'deployment.yaml'
                     def outputYaml = 'deployment_modified.yaml'
-                    def nodeParam = ' gke-eur-cluster-default-pool-b14a7988-c8gr' // Nouveau nom de nœud en eu
+                    def nodeParam = ' gke-eur-cluster-default-pool-b14a7988-tdzq' // Nouveau nom de nœud en eu
 
                     sh "python3 mig.py ${inputYaml} ${outputYaml} ${nodeParam}"
 
@@ -91,7 +91,7 @@ pipeline {
                     }
 
                     if (externalIP != null && externalIP != '') {
-                        def apiUrl = "http://34.163.222.120:3000/update-cluster-ip"
+                        def apiUrl = "http://34.163.199.27:3000/update-cluster-ip"
                         def payload = "{\"updatedIP\": \"${externalIP}\", \"apply_delay\": \"0\"}" // Modifier apply_delay à 1
 
                         // Effectuer l'appel API avec curl
