@@ -8,12 +8,9 @@ def get_config():
     with open('data.json', 'r') as file:
         return json.load(file)
 config = get_config()
-cluster_ip = config["cluster_ip"]
+db_ip = config[db_ip]
 print(cluster_ip)
-gateway_url = f"http://{cluster_ip}/analyze_and_decide"
-
-# Endpoint de votre gateway
-#gateway_url = "http://localhost:5000/analyze_and_decide"
+gateway_url = f"http://{db_ip}:31000/gateway"
 
 while True:
     # Générer des paquets de données aléatoires
