@@ -10,11 +10,11 @@ pipeline {
       steps {
         withKubeCredentials(kubectlCredentials: [[
           caCertificate: '', 
-          clusterName: 'kube-eu', 
+          clusterName: 'eur-cluster', 
           contextName: '', 
           credentialsId: 'kub-eu', 
           namespace: 'default', 
-          serverUrl: 'https://34.163.69.101'
+          serverUrl: 'https://34.155.234.23'
         ]]) {
           sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"'
           sh 'chmod u+x ./kubectl'
@@ -31,14 +31,14 @@ pipeline {
           contextName: '', 
           credentialsId: 'kub-eu', 
           namespace: 'default', 
-          serverUrl: 'https://34.163.69.101'
+          serverUrl: 'https://34.155.234.23'
         ]]) {
           sh 'curl -LO "https://storage.googleapis.com/kubernetes-release/release/v1.20.5/bin/linux/amd64/kubectl"'
           sh 'chmod u+x ./kubectl'
           
           // Définir l'image Docker à déployer
           script {
-            def dockerImage = 'racemmoalla/decision-service:latest'
+            def dockerImage = 'racemmoalla/decision:latest1'
             
             // Créer le fichier YAML de déploiement
             sh '''
@@ -61,7 +61,7 @@ spec:
       - name: decision-service
         image: ''' + dockerImage + '''
         ports:
-        - containerPort: 31001
+        - containerPort: 5000
 EOF
             '''
             
@@ -79,7 +79,7 @@ spec:
   ports:
   - protocol: TCP
     port: 80
-    targetPort: 31001
+    targetPort: 5000
 EOF
             '''
             
@@ -100,7 +100,7 @@ EOF
                 def sleepTime = 30 // seconds
 
                 while (externalIP == '' && attempts < maxAttempts) {
-                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.163.69.101') {
+                    withKubeConfig(credentialsId: 'kub-eu', caCertificate: '', serverUrl: 'https://34.155.234.23') {
                         // Retrieve external IP of decision-service
                         externalIP = sh(script: './kubectl get service decision-service -o=jsonpath="{.status.loadBalancer.ingress[0].ip}"', returnStdout: true).trim()
                         echo "External IP of decision-service: ${externalIP}"
@@ -109,14 +109,13 @@ EOF
                     if (externalIP == '' || externalIP=='') {
                         echo "Waiting for external IP to be assigned..."
                         sleep sleepTime
-                        attempts++
                         sleepTime = 2
                         
                     }
                 }
 
                 if (externalIP != null && externalIP != '') {
-                    def apiUrl = "http://34.163.16.180:3000/update-cluster-ip"
+                    def apiUrl = "34.163.199.27:3000/update-cluster-ip"
                     def payload = "{\"updatedIP\": \"${externalIP}\", \"apply_delay\": \"0\"}" // Modifier apply_delay à 1
 
                     // Effectuer l'appel API avec curl
@@ -137,13 +136,13 @@ EOF
             build job: 'check resources', wait: false
             // Générer un délai de sommeil aléatoire entre 100 et 300 secondes
             def random = new Random()
-            def sleepTime = 200 + random.nextInt(301) // 200 + (0-300) = 200-400
+            def sleepTime = 100 + random.nextInt(151) // 100 + (0-150) = 150-200
 
             // Afficher le délai de sommeil
-            echo "Sleeping for ${sleepTime} seconds before triggering 'charge node' job."
+            echo "Sleeping for 100 seconds before triggering 'charge node' job."
 
             // Attendre le délai généré
-            sleep(time: 60, unit: 'SECONDS')
+            sleep(time: 100, unit: 'SECONDS')
 
             // Déclencher le job suivant
             build job: 'charge node'
