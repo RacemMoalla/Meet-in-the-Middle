@@ -10,7 +10,7 @@ from typing import List, Dict
 instruction_count = 0
 delay_exceed_count = 0
 MAX_DELAY = 0.650
-MAX_EXCEED_COUNT = 3
+MAX_EXCEED_COUNT = 5
 temps_de_reponse: List[float] = []  # Liste pour stocker les temps de réponse
 RANDOM_THRESHOLD =50
 def get_config():
@@ -85,11 +85,9 @@ async def decision(data: List[DataPacket]):
     else:
         print(f"Something wrong with edge server: Error with {edge_response.status_code}")
 
-    # Vérifiez si le temps de réponse dépasse le délai maximum
+    # Vérifiez si le temps de réponse dépasse le délai maximum 
     if response_time > MAX_DELAY:
         delay_exceed_count += 1
-    else:
-        delay_exceed_count = 0
 
     # Déclencher le job Jenkins si le délai dépasse la limite
     if delay_exceed_count == MAX_EXCEED_COUNT:
